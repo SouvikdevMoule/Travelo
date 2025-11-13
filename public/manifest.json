@@ -1,0 +1,22 @@
+{
+  "name": "TravelAI Planner",
+  "short_name": "TravelAI",
+  "description": "Your smart AI-powered travel planner — plan trips, budgets, hotels, and itineraries in seconds.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/playstore.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
