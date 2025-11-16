@@ -19,9 +19,28 @@ import {
   X
 } from "lucide-react";
 import TripCard from "@/components/ui/TripCard";
+import Link from "next/link";
+
+interface Trip {
+  id: string;
+  from_place: string;
+  to_place: string;
+  start_date: string;
+  end_date: string;
+  travel_mode: string;
+  budget_segment: string;
+  persons: number;
+  user_id: string;
+  inserted_at: string;
+}
+
+interface TripUser {
+  trip_id: string;
+  trips: Trip;
+}
 
 export default function Dashboard() {
-  const [trips, setTrips] = useState<any[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState("all");
@@ -39,20 +58,57 @@ export default function Dashboard() {
     setUser(user);
   }
 
-  async function getTrips() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return router.push("/login");
+async function getTrips() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return router.push("/login");
 
-    const { data, error } = await supabase
-      .from("trips")
-      .select("*")
+  try {
+    // Fetch trips from trip_users table with joined trip data
+    const { data: tripUsers, error } = await supabase
+      .from("trip_users")
+      .select(`
+        trip_id, 
+        trips (
+          id,
+          from_place,
+          to_place,
+          start_date,
+          end_date,
+          travel_mode,
+          budget_segment,
+          persons,
+          user_id,
+          inserted_at
+        )
+      `)
       .eq("user_id", user.id)
       .order("inserted_at", { ascending: false });
 
-    if (error) console.error(error);
-    else setTrips(data || []);
+    if (error) {
+      console.error("Error fetching trips:", error);
+      setTrips([]);
+      return;
+    }
+
+    // Safely extract trips with null checks
+    const userTrips: Trip[] = [];
+    
+    if (tripUsers && Array.isArray(tripUsers)) {
+      tripUsers.forEach((item: any) => {
+        if (item.trips && typeof item.trips === 'object') {
+          userTrips.push(item.trips);
+        }
+      });
+    }
+    
+    setTrips(userTrips);
+  } catch (error) {
+    console.error("Error in getTrips:", error);
+    setTrips([]);
+  } finally {
     setIsLoading(false);
   }
+}
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -61,12 +117,12 @@ export default function Dashboard() {
 
   const filteredTrips = trips.filter(trip => {
     const matchesSearch = 
-      trip.from_place.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      trip.to_place.toLowerCase().includes(searchTerm.toLowerCase());
+      trip.from_place?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      trip.to_place?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesFilter = 
       filterMode === "all" || 
-      trip.travel_mode.toLowerCase() === filterMode.toLowerCase();
+      trip.travel_mode?.toLowerCase() === filterMode.toLowerCase();
     
     return matchesSearch && matchesFilter;
   });
@@ -112,45 +168,100 @@ export default function Dashboard() {
       <motion.header 
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="bg-white/90 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50"
+        className="bg-white/95 backdrop-blur-md border-b border-gray-200/80 sticky top-0 z-50 shadow-sm"
       >
         <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6">
           <div className="flex justify-between items-center h-14 sm:h-16">
+            {/* Logo */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg sm:rounded-xl flex items-center justify-center">
-                <Plane className="w-4 h-4 sm:w-6 sm:h-6 text-white transform -rotate-45" />
-              </div>
-              <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                TripPlanner
-              </span>
+              <Link href="/dashboard" className="flex items-center gap-2 sm:gap-3">
+                <motion.div 
+                  className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg sm:rounded-xl flex items-center justify-center"
+                  whileHover={{ scale: 1.05, rotate: -5 }}
+                  transition={{ type: "spring", stiffness: 300 }}
+                >
+                  <Plane className="w-4 h-4 sm:w-6 sm:h-6 text-white transform -rotate-45" />
+                </motion.div>
+                <span className="text-lg sm:text-xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                  TripPlanner
+                </span>
+              </Link>
             </div>
 
-            {/* Mobile Menu Button */}
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden xs:flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-gray-600">
-                <User className="w-3 h-3 sm:w-4 sm:h-4" />
-                <span className="truncate max-w-[120px] sm:max-w-none">{user?.email}</span>
-              </div>
-              
-              <div className="flex items-center gap-1">
+            {/* Desktop Navigation */}
+            <div className="hidden xs:flex items-center gap-4 sm:gap-6">
+              {/* Dashboard Link */}
+              <Link 
+                href="/dashboard"
+                className="text-gray-600 hover:text-blue-600 font-medium transition-colors duration-200 text-sm sm:text-base flex items-center gap-2"
+              >
+                <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                </div>
+                Dashboard
+              </Link>
+
+              {/* User Profile */}
+              <div className="flex items-center gap-3">
+                <Link 
+                  href="/profile"
+                  className="flex items-center gap-2 sm:gap-3 p-1 sm:p-2 rounded-xl hover:bg-gray-50 transition-colors duration-200 group"
+                >
+                  <div className="relative">
+                    <img
+                      src={
+                        user?.user_metadata?.avatar_url ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.email || 'User')}&background=6366f1&color=fff&bold=true`
+                      }
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white shadow-sm group-hover:border-blue-100 transition-colors"
+                      alt="Profile"
+                    />
+                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
+                  </div>
+                  <div className="hidden sm:block text-left">
+                    <p className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
+                      {user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate max-w-[120px]">
+                      {user?.email}
+                    </p>
+                  </div>
+                </Link>
+
+                {/* Sign Out Button */}
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={handleSignOut}
-                  className="hidden xs:flex items-center gap-1 sm:gap-2 text-gray-600 hover:text-red-600 transition-colors px-2 sm:px-3 py-1 sm:py-2 rounded-lg hover:bg-red-50 text-xs sm:text-sm"
+                  className="hidden sm:flex items-center gap-2 text-gray-500 hover:text-red-600 transition-colors px-3 py-2 rounded-lg hover:bg-red-50 text-sm"
+                  title="Sign Out"
                 >
-                  <LogOut className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:block">Sign Out</span>
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
                 </motion.button>
-
-                {/* Mobile menu button */}
-                <button
-                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                  className="xs:hidden p-2 text-gray-600 hover:text-gray-900"
-                >
-                  {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
               </div>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <div className="flex items-center gap-2 xs:hidden">
+              {/* Mobile Sign Out Button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleSignOut}
+                className="p-2 text-gray-500 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50"
+                title="Sign Out"
+              >
+                <LogOut className="w-5 h-5" />
+              </motion.button>
+
+              {/* Mobile Menu Toggle */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-2 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
             </div>
           </div>
 
@@ -160,19 +271,69 @@ export default function Dashboard() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="xs:hidden border-t border-gray-200 py-3"
+              className="xs:hidden border-t border-gray-200 pt-4 pb-3 space-y-3"
             >
-              <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-                <User className="w-4 h-4" />
-                <span className="truncate">{user?.email}</span>
+              {/* User Info */}
+              <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl">
+                <img
+                  src={
+                    user?.user_metadata?.avatar_url ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.email || 'User')}&background=6366f1&color=fff&bold=true`
+                  }
+                  className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+                  alt="Profile"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {user?.email}
+                  </p>
+                </div>
               </div>
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center gap-2 text-red-600 hover:text-red-700 transition-colors py-2 text-sm"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </button>
+
+              {/* Navigation Links */}
+              <div className="space-y-1">
+                <Link 
+                  href="/dashboard"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 w-full p-3 text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors duration-200"
+                >
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <span className="font-medium">Dashboard</span>
+                </Link>
+
+                <Link 
+                  href="/profile"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 w-full p-3 text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors duration-200"
+                >
+                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                    <User className="w-4 h-4 text-green-600" />
+                  </div>
+                  <span className="font-medium">My Profile</span>
+                </Link>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="grid grid-cols-3 gap-2 p-2 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                {[
+                  { label: "Trips", value: trips.length, icon: Plane },
+                  { label: "Upcoming", value: trips.filter(t => new Date(t.start_date) > new Date()).length, icon: Calendar },
+                  { label: "Shared", value: "0", icon: Users },
+                ].map((stat, index) => {
+                  const Icon = stat.icon;
+                  return (
+                    <div key={stat.label} className="text-center">
+                      <div className="text-sm font-bold text-blue-600">{stat.value}</div>
+                      <div className="text-xs text-blue-500">{stat.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </motion.div>
           )}
         </div>
@@ -200,7 +361,7 @@ export default function Dashboard() {
               { icon: MapPin, label: "Total Trips", value: trips.length, color: "blue", bgColor: "bg-blue-100", textColor: "text-blue-600" },
               { icon: Calendar, label: "Upcoming", value: trips.filter(t => new Date(t.start_date) > new Date()).length, color: "green", bgColor: "bg-green-100", textColor: "text-green-600" },
               { icon: Users, label: "Travelers", value: trips.reduce((acc, trip) => acc + (trip.persons || 1), 0), color: "purple", bgColor: "bg-purple-100", textColor: "text-purple-600" },
-              { icon: DollarSign, label: "Avg Budget", value: "Medium", color: "amber", bgColor: "bg-amber-100", textColor: "text-amber-600" },
+              { icon: DollarSign, label: "Shared Trips", value: "0", color: "amber", bgColor: "bg-amber-100", textColor: "text-amber-600" },
             ].map((stat, index) => (
               <motion.div
                 key={stat.label}
@@ -208,7 +369,7 @@ export default function Dashboard() {
                 className="bg-white/80 backdrop-blur-sm rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm border border-white/50 hover:shadow-lg transition-all duration-300"
               >
                 <div className={`inline-flex p-1 sm:p-2 rounded-lg ${stat.bgColor} mb-2`}>
-                  <stat.icon className={`w-3 h-3 sm:w-4 sm:h-5 text-${stat.color}-600`} />
+                  <stat.icon className={`w-3 h-3 sm:w-4 sm:h-5 ${stat.textColor}`} />
                 </div>
                 <div className="text-lg xs:text-xl sm:text-2xl font-bold text-gray-900">{stat.value}</div>
                 <div className="text-xs sm:text-sm text-gray-600 truncate">{stat.label}</div>

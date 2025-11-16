@@ -253,42 +253,64 @@ async function handleSubmit(e: React.FormEvent) {
     }
 
     // ✅ Insert trip into Supabase
-    const { data: insertData, error: insertError } = await supabase
+    const tripResult = await supabase
       .from("trips")
       .insert([
         {
           ...trip,
+          max_persons: trip.persons,
           user_id: user.id,
           persons: parseInt(trip.persons) || 1,
           start_date: trip.start_date.toISOString(),
           end_date: trip.end_date.toISOString(),
         },
       ])
-      .select()
-      .single(); // ✅ get one record directly
+      .select();
 
-    if (insertError) throw insertError;
+    if (tripResult.error) throw tripResult.error;
+    if (!tripResult.data || tripResult.data.length === 0) {
+      throw new Error("Failed to create trip");
+    }
 
-    const insertedTrip = insertData;
+    const newTrip = tripResult.data[0];
+
+    // ✅ Auto-add creator to trip_users
+    const tripUserResult = await supabase.from("trip_users").insert([
+      {
+        trip_id: newTrip.id,
+        user_id: user.id,
+        role: "creator",
+      }
+    ]);
+
+    if (tripUserResult.error) {
+      console.error("Failed to add creator to trip:", tripUserResult.error);
+      // Continue anyway as the trip was created successfully
+    }
 
     // ✅ Show enriching state
     setIsLoading(true);
     console.log("🧠 Enriching trip via AI...");
 
-    const enrichRes = await fetch("/api/enrich-trip", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tripId: insertedTrip.id }),
-    });
+    try {
+      const enrichRes = await fetch("/api/enrich-trip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tripId: newTrip.id }),
+      });
 
-    if (!enrichRes.ok) {
-      console.error("❌ Enrichment failed:", await enrichRes.text());
-    } else {
-      console.log("✅ Trip enrichment complete");
+      if (!enrichRes.ok) {
+        console.error("❌ Enrichment failed:", await enrichRes.text());
+      } else {
+        console.log("✅ Trip enrichment complete");
+      }
+    } catch (enrichError) {
+      console.error("❌ Enrichment error:", enrichError);
+      // Continue to redirect even if enrichment fails
     }
 
     // ✅ Redirect to trip details page
-    router.push(`/trip/${insertedTrip.id}`);
+    router.push(`/trip/${newTrip.id}`);
   } catch (err: any) {
     console.error(err);
     setError(err.message || "Something went wrong while creating the trip");

@@ -61,6 +61,7 @@ export default function TripDetail() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [accessDenied, setAccessDenied] = useState(false);
 
     useEffect(() => {
         fetchTrip();
@@ -73,19 +74,49 @@ export default function TripDetail() {
             return;
         }
 
-        const { data, error } = await supabase
-            .from('trips')
-            .select('*')
-            .eq('id', params.id)
-            .eq('user_id', user.id)
-            .single();
+        const tripId = params.id as string;
 
-        if (error) {
-            console.error('Error fetching trip:', error);
-        } else {
-            setTrip(data);
+        try {
+            // Check if user has access to this trip
+            const { data: member, error: memberError } = await supabase
+                .from("trip_users")
+                .select("*")
+                .eq("trip_id", tripId)
+                .eq("user_id", user.id)
+                .maybeSingle();
+
+            if (memberError) {
+                console.error('Error checking trip access:', memberError);
+                setAccessDenied(true);
+                setIsLoading(false);
+                return;
+            }
+
+            if (!member) {
+                setAccessDenied(true);
+                setIsLoading(false);
+                return;
+            }
+
+            // Fetch trip details
+            const { data, error } = await supabase
+                .from('trips')
+                .select('*')
+                .eq('id', tripId)
+                .single();
+
+            if (error) {
+                console.error('Error fetching trip:', error);
+                setAccessDenied(true);
+            } else {
+                setTrip(data);
+            }
+        } catch (error) {
+            console.error('Error in fetchTrip:', error);
+            setAccessDenied(true);
+        } finally {
+            setIsLoading(false);
         }
-        setIsLoading(false);
     }
 
     const formatDate = (dateString: string) => {
@@ -118,15 +149,34 @@ export default function TripDetail() {
         );
     }
 
-    if (!trip) {
+    if (accessDenied || !trip) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 flex items-center justify-center px-4">
                 <div className="text-center max-w-sm w-full">
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Trip Not Found</h1>
-                    <p className="text-gray-600 mb-6">The trip you're looking for doesn't exist.</p>
-                    <Button onClick={() => router.push('/dashboard')} className="w-full sm:w-auto">
-                        Back to Dashboard
-                    </Button>
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <X className="w-8 h-8 text-red-600" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
+                    <p className="text-gray-600 mb-6">
+                        {accessDenied 
+                            ? "You don't have permission to view this trip." 
+                            : "The trip you're looking for doesn't exist."
+                        }
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                        <Button onClick={() => router.push('/dashboard')} className="w-full sm:w-auto">
+                            Back to Dashboard
+                        </Button>
+                        {accessDenied && (
+                            <Button 
+                                variant="outline" 
+                                onClick={() => router.push('/dashboard/new-trip')}
+                                className="w-full sm:w-auto"
+                            >
+                                Create New Trip
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -311,8 +361,6 @@ export default function TripDetail() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
                 >
-         // In your main component, update the tab rendering section:
-
                     {activeTab === 'overview' && <OverviewTab trip={trip} />}
                     {activeTab === 'itinerary' && <ItineraryTab itinerary={trip.itinerary || []} />}
                     {activeTab === 'hotels' && <HotelsTab hotels={trip.hotels || []} />}
@@ -323,6 +371,7 @@ export default function TripDetail() {
     );
 }
 
+// ... rest of the component functions (OverviewTab, ItineraryTab, HotelsTab, FoodTab) remain the same ...
 function OverviewTab({ trip }: { trip: Trip }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
